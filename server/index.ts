@@ -2,6 +2,7 @@ import express from 'express';
 import { createServer } from 'http';
 import { Server, Socket } from 'socket.io';
 import cors from 'cors';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { RoomManager } from './roomManager.js';
@@ -27,11 +28,29 @@ const io = new Server(httpServer, {
 const roomManager = new RoomManager();
 
 // Serve static frontend in production if built
-const clientDist = path.join(__dirname, '../dist');
+const candidateDistPaths = [
+  path.join(__dirname, '../dist'),
+  path.resolve(process.cwd(), 'dist'),
+  path.join(__dirname, '../../dist'),
+];
+const clientDist = candidateDistPaths.find((p) => fs.existsSync(p)) || candidateDistPaths[0];
 app.use(express.static(clientDist));
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', time: Date.now() });
+});
+
+// SPA fallback: Send index.html for non-API GET requests
+app.get('*', (req, res, next) => {
+  if (req.path.startsWith('/api') || req.path.startsWith('/socket.io')) {
+    return next();
+  }
+  const indexPath = path.join(clientDist, 'index.html');
+  if (fs.existsSync(indexPath)) {
+    res.sendFile(indexPath);
+  } else {
+    next();
+  }
 });
 
 function broadcastState(game: GameEngine) {

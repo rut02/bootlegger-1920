@@ -1,3 +1,13 @@
+---
+title: Bootlegger 1920
+emoji: 🥃
+colorFrom: yellow
+colorTo: red
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # 🥃 Bootlegger 1920: The Chicago Smugglers
 > เว็บบอร์ดเกมบลัฟฟ์และเจรจาต่อรองออนไลน์ สไตล์มาเฟียยุค 1920s (ดัดแปลงจากกลไก Sheriff of Nottingham อย่างถูกลิขสิทธิ์ 100%)
 
