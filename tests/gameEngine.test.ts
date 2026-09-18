@@ -222,4 +222,35 @@ describe('Bootlegger 1920 & Bang Rajan - Game Engine Updates', () => {
     expect(game.inspectionAnimation?.action).toBe('passed');
     expect(game.inspectionAnimation?.cards.length).toBe(2);
   });
+
+  it('maintains logs in chronological order (oldest first, newest last)', () => {
+    game.startGame(1);
+    game.addLog('Log 1: First event', 'info');
+    game.addLog('Log 2: Second event', 'alert');
+    game.addLog('Log 3: Latest event', 'bribe');
+
+    const state = game.getSanitizedState(game.players[0].id);
+    const last3 = state.logs.slice(-3);
+    expect(last3[0].text).toBe('Log 1: First event');
+    expect(last3[1].text).toBe('Log 2: Second event');
+    expect(last3[2].text).toBe('Log 3: Latest event');
+  });
+
+  it('supports AFK status and Bot AI takeover for disconnected / idle players', () => {
+    game.startGame(1);
+    const humanPlayer = game.players[0];
+    expect(humanPlayer.isAfk).toBeFalsy();
+
+    const ok = game.setPlayerAfk(humanPlayer.id, true);
+    expect(ok).toBe(true);
+    expect(humanPlayer.isAfk).toBe(true);
+
+    const sanitized = game.getSanitizedState(humanPlayer.id);
+    const sanitizedPlayer = sanitized.players.find((p) => p.id === humanPlayer.id);
+    expect(sanitizedPlayer?.isAfk).toBe(true);
+
+    // Turn off AFK
+    game.setPlayerAfk(humanPlayer.id, false);
+    expect(humanPlayer.isAfk).toBe(false);
+  });
 });

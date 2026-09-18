@@ -16,12 +16,14 @@ import { RulesModal } from './components/RulesModal.js';
 import { TabletopBoard } from './components/TabletopBoard.js';
 import { sounds } from './utils/audio.js';
 import { saveSession, getSession, clearSession } from './utils/session.js';
+import { getTranslation, Language } from './utils/i18n.js';
 
 export const App: React.FC = () => {
   const [socket, setSocket] = useState<Socket | null>(null);
   const [gameState, setGameState] = useState<PublicGameState | null>(null);
   const [myPlayerId, setMyPlayerId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [language, setLanguage] = useState<Language>('th');
 
   // Client Selection State
   const [selectedCardIds, setSelectedCardIds] = useState<string[]>([]);
@@ -313,9 +315,21 @@ export const App: React.FC = () => {
     }
   };
 
+  const handleTogglePlayerAfk = (targetPlayerId: string) => {
+    if (gameState && socket) {
+      socket.emit('toggle_player_afk', {
+        roomCode: gameState.roomCode,
+        targetPlayerId,
+      });
+    }
+  };
+
   const handleLeaveRoom = () => {
+    socket?.emit('leave_room');
     clearSession();
-    window.location.reload();
+    setGameState(null);
+    setMyPlayerId(null);
+    setSelectedCardIds([]);
   };
 
   // Find My Player and Inspector
@@ -347,6 +361,7 @@ export const App: React.FC = () => {
           onSetTheme={handleSetTheme}
           onAddBot={handleAddBot}
           onStartGame={handleStartGame}
+          onLeaveRoom={handleLeaveRoom}
         />
       </main>
     );
@@ -359,7 +374,7 @@ export const App: React.FC = () => {
     <div
       className={`text-vintage-paper ${
         isTabletop
-          ? 'h-screen max-h-screen overflow-hidden flex flex-col justify-between bg-[#080402]'
+          ? 'h-screen max-h-screen min-h-[560px] overflow-hidden flex flex-col justify-between bg-[#080402]'
           : 'min-h-screen flex flex-col justify-between pb-4'
       }`}
     >
@@ -434,10 +449,18 @@ export const App: React.FC = () => {
           </button>
 
           <button
+            onClick={() => setLanguage(language === 'th' ? 'en' : 'th')}
+            className="text-xs px-2.5 py-1 rounded-lg bg-vintage-gold/20 border border-vintage-gold/60 text-vintage-gold hover:bg-vintage-gold/30 font-bold"
+            title="สลับภาษา (Switch Language)"
+          >
+            {language === 'th' ? '🇹🇭 TH' : '🇬🇧 EN'}
+          </button>
+
+          <button
             onClick={handleLeaveRoom}
             className="text-[10px] px-2 py-1 rounded bg-rose-950 border border-rose-700/60 text-rose-200 hover:bg-rose-900"
           >
-            ออกจากห้อง
+            {language === 'th' ? 'ออกจากห้อง' : 'Leave'}
           </button>
         </div>
       </header>
@@ -517,6 +540,9 @@ export const App: React.FC = () => {
               onToggleSound={() => setSoundEnabled(!soundEnabled)}
               onOpenRules={() => setShowRulesModal(true)}
               onOpenWarehouse={() => setShowMyWarehouseModal(true)}
+              language={language}
+              onToggleLanguage={() => setLanguage(language === 'th' ? 'en' : 'th')}
+              onTogglePlayerAfk={handleTogglePlayerAfk}
             />
           </div>
         ) : (

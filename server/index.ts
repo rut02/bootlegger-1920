@@ -304,10 +304,15 @@ io.on('connection', (socket: Socket) => {
       leftCardIds: string[];
       rightCardIds: string[];
     }) => {
+      console.log('[Server] market_finalize_discards received:', { roomCode, playerId, leftCardIds, rightCardIds });
       const game = roomManager.getRoom(roomCode);
-      if (!game) return;
+      if (!game) {
+        console.warn('[Server] Room not found for market_finalize_discards:', roomCode);
+        return;
+      }
 
       const success = game.marketFinalizeDiscards(playerId, leftCardIds || [], rightCardIds || []);
+      console.log('[Server] marketFinalizeDiscards result:', success);
       if (success) {
         broadcastState(game);
       }
@@ -472,7 +477,35 @@ io.on('connection', (socket: Socket) => {
     broadcastState(game);
   });
 
-  // 15. Disconnect
+  // 14.5. Toggle Player AFK / Bot Takeover
+  socket.on(
+    'toggle_player_afk',
+    ({ roomCode, targetPlayerId }: { roomCode: string; targetPlayerId: string }) => {
+      const game = roomManager.getRoom(roomCode);
+      if (!game) return;
+      const target = game.players.find((p) => p.id === targetPlayerId);
+      if (!target || target.isBot) return;
+
+      const newAfk = !target.isAfk;
+      game.setPlayerAfk(targetPlayerId, newAfk);
+      broadcastState(game);
+    }
+  );
+
+  // 15. Leave Room
+  socket.on('leave_room', () => {
+    const mapping = roomManager.removePlayerFromRoom(socket.id);
+    if (mapping) {
+      socket.leave(`room_${mapping.roomCode}`);
+      socket.leave(`player_${mapping.playerId}`);
+      const game = roomManager.getRoom(mapping.roomCode);
+      if (game) {
+        broadcastState(game);
+      }
+    }
+  });
+
+  // 16. Disconnect
   socket.on('disconnect', () => {
     const mapping = roomManager.handleDisconnect(socket.id);
     if (mapping) {

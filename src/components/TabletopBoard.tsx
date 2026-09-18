@@ -4,6 +4,7 @@ import { THEMES } from '../../shared/themes.js';
 import { ModularCard } from './ModularCard.js';
 import { HandDragZone } from './HandDragZone.js';
 import { sounds } from '../utils/audio.js';
+import { getTranslation, Language } from '../utils/i18n.js';
 
 interface TabletopBoardProps {
   gameState: PublicGameState;
@@ -34,6 +35,9 @@ interface TabletopBoardProps {
   onToggleSound?: () => void;
   onOpenRules?: () => void;
   onOpenWarehouse?: () => void;
+  language?: 'th' | 'en';
+  onToggleLanguage?: () => void;
+  onTogglePlayerAfk?: (playerId: string) => void;
 }
 
 const LEGAL_TYPES: { type: LegalGoodsType; name: string; icon: string; val: number }[] = [
@@ -72,12 +76,39 @@ export const TabletopBoard: React.FC<TabletopBoardProps> = ({
   onToggleSound,
   onOpenRules,
   onOpenWarehouse,
+  language = 'th',
+  onToggleLanguage,
+  onTogglePlayerAfk,
 }) => {
+  const t = getTranslation(language);
   const theme = THEMES[gameState.themeId] || THEMES.mafia_1920;
   const me = gameState.players?.find((p) => p.id === myPlayerId);
   const otherPlayers = (gameState.players || []).filter((p) => p.id !== myPlayerId);
   const inspector = gameState.players?.find((p) => p.isInspector);
   const activeTargetPlayer = gameState.players?.find((p) => p.id === gameState.activeInspectTargetId);
+
+  // Collapse / Toggle UI States
+  const [isLogCollapsed, setIsLogCollapsed] = useState<boolean>(false);
+  const [showTableGoods, setShowTableGoods] = useState<boolean>(false);
+  const [expandedPlayerIds, setExpandedPlayerIds] = useState<Record<string, boolean>>({});
+
+  const togglePlayerGoods = (playerId: string) => {
+    setExpandedPlayerIds((prev) => {
+      const current = prev[playerId] !== undefined ? prev[playerId] : showTableGoods;
+      return { ...prev, [playerId]: !current };
+    });
+  };
+
+  const toggleAllPlayerGoods = () => {
+    const next = !showTableGoods;
+    setShowTableGoods(next);
+    const newExpanded: Record<string, boolean> = {};
+    (gameState.players || []).forEach((p) => {
+      newExpanded[p.id] = next;
+    });
+    setExpandedPlayerIds(newExpanded);
+    sounds.playFlip();
+  };
 
   // Local state for log filter: 'all' | 'bribe' | 'fine'
   const [logFilter, setLogFilter] = useState<'all' | 'bribe' | 'fine'>('all');
@@ -125,10 +156,9 @@ export const TabletopBoard: React.FC<TabletopBoardProps> = ({
     setIsBribeModalOpen(false);
   };
 
-  // Reset packed crate state when phase changes or player already packed
+  // Close crate sealing when phase changes or packed
   useEffect(() => {
     if (gameState.phase !== 'LOADING' || me?.hasPackedCrate) {
-      setPackedCrateCardIds([]);
       setIsSealingCrate(false);
     }
   }, [gameState.phase, me?.hasPackedCrate]);
@@ -161,6 +191,7 @@ export const TabletopBoard: React.FC<TabletopBoardProps> = ({
   // Market Step 3 Distribution State
   const [step3Targets, setStep3Targets] = useState<Record<string, 'left' | 'right'>>({});
   const [step3Order, setStep3Order] = useState<string[]>([]);
+  const [isSubmittingDiscards, setIsSubmittingDiscards] = useState<boolean>(false);
 
   useEffect(() => {
     if (pendingDiscards.length > 0) {
@@ -181,6 +212,36 @@ export const TabletopBoard: React.FC<TabletopBoardProps> = ({
       ? step3Order
       : pendingDiscards.map((c) => c.id);
 
+  const handleConfirmMarketDiscards = (explicitLeft?: string[], explicitRight?: string[]) => {
+    sounds.playCrate();
+    setIsSubmittingDiscards(true);
+
+    let leftIds: string[];
+    let rightIds: string[];
+
+    if (explicitLeft !== undefined && explicitRight !== undefined) {
+      leftIds = explicitLeft;
+      rightIds = explicitRight;
+    } else {
+      leftIds = effectiveOrder.filter((id) => (step3Targets[id] || 'left') === 'left');
+      rightIds = effectiveOrder.filter((id) => step3Targets[id] === 'right');
+    }
+
+    const finalLeft = leftIds.length === 0 && rightIds.length === 0 ? pendingDiscards.map((c) => c.id) : leftIds;
+
+    console.log('[TabletopBoard] handleConfirmMarketDiscards dispatching:', { finalLeft, rightIds });
+
+    if (onMarketFinalizeDiscards) {
+      onMarketFinalizeDiscards(finalLeft, rightIds);
+    } else if (onMarketSplitDiscard) {
+      onMarketSplitDiscard(finalLeft, rightIds);
+    }
+
+    setTimeout(() => {
+      setIsSubmittingDiscards(false);
+    }, 2000);
+  };
+
 
 
   // Filter logs
@@ -197,7 +258,7 @@ export const TabletopBoard: React.FC<TabletopBoardProps> = ({
     const contrabandCount = player.warehouse?.contrabandCount || 0;
 
     return (
-      <div className="flex items-center gap-1.5 justify-center py-1">
+      <div className="flex items-center gap-1 sm:gap-1.5 justify-center py-1">
         {LEGAL_TYPES.map(({ type, name, icon, val }) => {
           const cards = legalWarehouse[type] || [];
           const count = cards.length;
@@ -210,30 +271,33 @@ export const TabletopBoard: React.FC<TabletopBoardProps> = ({
               key={type}
               className="relative group select-none cursor-pointer"
             >
-              {/* Instant Rich Hover Tooltip */}
-              <div className="hidden group-hover:flex flex-col items-center absolute bottom-full mb-2 left-1/2 -translate-x-1/2 z-50 pointer-events-none bg-black/95 border-2 border-amber-400/90 rounded-xl px-2.5 py-1.5 shadow-[0_0_25px_rgba(0,0,0,0.95)] whitespace-nowrap animate-fadeIn">
-                <div className="text-[11px] font-extrabold text-amber-200 flex items-center gap-1 border-b border-amber-500/40 pb-1 w-full justify-center">
-                  <span>{icon}</span>
+              {/* Instant Rich Hover Tooltip with crystal-clear card count */}
+              <div className="hidden group-hover:flex flex-col items-center absolute bottom-full mb-2 left-1/2 -translate-x-1/2 z-[999] pointer-events-none bg-black/95 border-2 border-amber-400 rounded-xl px-3 py-2 shadow-[0_0_30px_rgba(0,0,0,0.95)] whitespace-nowrap animate-fadeIn">
+                <div className="text-xs font-extrabold text-amber-200 flex items-center gap-1.5 border-b border-amber-500/40 pb-1 w-full justify-center">
+                  <span className="text-base">{icon}</span>
                   <span>{displayName}</span>
-                  <span className="text-[10px] text-amber-300 font-mono">(${displayVal}/ใบ)</span>
+                  <span className="text-[11px] text-amber-300 font-mono font-extrabold">(${displayVal}/ใบ)</span>
                 </div>
-                <div className="text-[10.5px] text-white font-mono font-bold mt-1">
-                  โกดังของ {player.name}: <span className={count > 0 ? "text-emerald-400 font-extrabold" : "text-white/40"}>{count} ใบ</span>
-                  {count > 0 && <span className="text-amber-300 ml-1">(${count * displayVal})</span>}
+                <div className="text-xs text-white font-mono font-bold mt-1.5 flex items-center gap-1">
+                  <span>โกดัง {player.name}:</span>
+                  <span className={`px-1.5 py-0.2 rounded font-extrabold ${count > 0 ? "bg-emerald-500/30 text-emerald-300 border border-emerald-400/50" : "text-white/40"}`}>
+                    {count} ใบ
+                  </span>
+                  {count > 0 && <span className="text-amber-300 font-extrabold">(${count * displayVal})</span>}
                 </div>
-                <div className="text-[8.5px] text-amber-200/70 mt-0.5">
-                  {count > 0 ? '✓ สินค้าถูกกฎหมายผ่านด่านแล้ว' : 'ยังไม่มีในโกดัง'}
+                <div className="text-[9.5px] text-amber-200/80 mt-1">
+                  {count > 0 ? '✓ สินค้าถูกกฎหมายผ่านด่านเรียบร้อย' : 'ยังไม่มีสินค้านี้ในโกดัง'}
                 </div>
                 {/* Arrow */}
-                <div className="w-2 h-2 bg-black border-r-2 border-b-2 border-amber-400/90 rotate-45 absolute -bottom-1 left-1/2 -translate-x-1/2" />
+                <div className="w-2.5 h-2.5 bg-black border-r-2 border-b-2 border-amber-400 rotate-45 absolute -bottom-1.5 left-1/2 -translate-x-1/2" />
               </div>
 
-              {/* Card Container */}
+              {/* Card Container (Enlarged for readability) */}
               <div
-                className={`w-7 sm:w-8 aspect-[3/4] rounded-lg overflow-hidden border transition-all relative flex flex-col items-center justify-center ${
+                className={`w-11 h-15 sm:w-13 sm:h-18 md:w-14 md:h-19 aspect-[3/4] rounded-lg overflow-hidden border-2 transition-all relative flex flex-col items-center justify-center shadow-md ${
                   count > 0
-                    ? 'border-emerald-400 bg-black shadow-[0_0_10px_rgba(16,185,129,0.3)] ring-1 ring-emerald-400/80 scale-100'
-                    : 'border-white/20 bg-black/50 opacity-40 grayscale hover:opacity-75 hover:grayscale-0'
+                    ? 'border-emerald-400 bg-black shadow-[0_0_12px_rgba(16,185,129,0.5)] ring-1 ring-emerald-400/80 scale-100 hover:scale-110 z-10'
+                    : 'border-white/20 bg-black/60 opacity-35 grayscale hover:opacity-80 hover:grayscale-0'
                 }`}
               >
                 <img
@@ -246,12 +310,12 @@ export const TabletopBoard: React.FC<TabletopBoardProps> = ({
                   }}
                 />
 
-                {/* Bold, Clear Count Badge */}
+                {/* Bold, Enlarged Count Badge */}
                 <div
-                  className={`absolute -bottom-1 -right-1 min-w-[14px] h-[14px] px-1 rounded-full border text-[8px] font-black flex items-center justify-center shadow-md z-10 font-mono ${
+                  className={`absolute -bottom-1 -right-1 min-w-[20px] h-[20px] px-1 rounded-full border-2 text-[10px] font-black flex items-center justify-center shadow-lg z-20 font-mono leading-none ${
                     count > 0
-                      ? 'bg-emerald-400 border-black text-black'
-                      : 'bg-black/90 border-white/40 text-white/50'
+                      ? 'bg-emerald-400 border-black text-black ring-1 ring-emerald-200'
+                      : 'bg-black border-white/40 text-white/50'
                   }`}
                 >
                   {count}
@@ -264,27 +328,30 @@ export const TabletopBoard: React.FC<TabletopBoardProps> = ({
         {/* 5th Stack: Contraband (Face-Down Secret Stash) */}
         <div className="relative group select-none cursor-pointer">
           {/* Instant Rich Hover Tooltip */}
-          <div className="hidden group-hover:flex flex-col items-center absolute bottom-full mb-2 left-1/2 -translate-x-1/2 z-50 pointer-events-none bg-black/95 border-2 border-rose-500 rounded-xl px-2.5 py-1.5 shadow-[0_0_25px_rgba(225,29,72,0.6)] whitespace-nowrap animate-fadeIn">
-            <div className="text-[11px] font-extrabold text-rose-300 flex items-center gap-1 border-b border-rose-500/40 pb-1 w-full justify-center">
-              <span>🤫</span>
+          <div className="hidden group-hover:flex flex-col items-center absolute bottom-full mb-2 left-1/2 -translate-x-1/2 z-[999] pointer-events-none bg-black/95 border-2 border-rose-500 rounded-xl px-3 py-2 shadow-[0_0_30px_rgba(225,29,72,0.7)] whitespace-nowrap animate-fadeIn">
+            <div className="text-xs font-extrabold text-rose-300 flex items-center gap-1.5 border-b border-rose-500/40 pb-1 w-full justify-center">
+              <span className="text-base">🤫</span>
               <span>สินค้าผิดกฎหมาย (ของเถื่อน)</span>
             </div>
-            <div className="text-[10.5px] text-white font-mono font-bold mt-1">
-              โกดังของ {player.name}: <span className={contrabandCount > 0 ? "text-rose-400 font-extrabold" : "text-white/40"}>{contrabandCount} ใบ</span>
+            <div className="text-xs text-white font-mono font-bold mt-1.5 flex items-center gap-1">
+              <span>โกดัง {player.name}:</span>
+              <span className={`px-1.5 py-0.2 rounded font-extrabold ${contrabandCount > 0 ? "bg-rose-500/30 text-rose-300 border border-rose-400/50" : "text-white/40"}`}>
+                {contrabandCount} ใบ
+              </span>
             </div>
-            <div className="text-[8.5px] text-rose-200/70 mt-0.5">
-              คว่ำหน้าซ่อนไว้ (เปิดนับคะแนนหลังจบเกม)
+            <div className="text-[9.5px] text-rose-200/80 mt-1">
+              คว่ำหน้าซ่อนไว้ (เปิดนับแต้มหลังจบเกม)
             </div>
             {/* Arrow */}
-            <div className="w-2 h-2 bg-black border-r-2 border-b-2 border-rose-500 rotate-45 absolute -bottom-1 left-1/2 -translate-x-1/2" />
+            <div className="w-2.5 h-2.5 bg-black border-r-2 border-b-2 border-rose-500 rotate-45 absolute -bottom-1.5 left-1/2 -translate-x-1/2" />
           </div>
 
-          {/* Card Container */}
+          {/* Card Container (Enlarged) */}
           <div
-            className={`w-7 sm:w-8 aspect-[3/4] rounded-lg overflow-hidden border transition-all relative flex flex-col items-center justify-center ${
+            className={`w-11 h-15 sm:w-13 sm:h-18 md:w-14 md:h-19 aspect-[3/4] rounded-lg overflow-hidden border-2 transition-all relative flex flex-col items-center justify-center shadow-md ${
               contrabandCount > 0
-                ? 'border-rose-500 bg-[#25070c] shadow-[0_0_10px_rgba(225,29,72,0.4)] ring-1 ring-rose-400/80 scale-100'
-                : 'border-white/20 bg-black/50 opacity-40 grayscale hover:opacity-75'
+                ? 'border-rose-500 bg-[#25070c] shadow-[0_0_12px_rgba(225,29,72,0.5)] ring-1 ring-rose-400/80 scale-100 hover:scale-110 z-10'
+                : 'border-white/20 bg-black/60 opacity-35 grayscale hover:opacity-80'
             }`}
           >
             <img
@@ -292,12 +359,12 @@ export const TabletopBoard: React.FC<TabletopBoardProps> = ({
               alt="Secret Contraband"
               className="w-full h-full object-cover pointer-events-none"
             />
-            {/* Bold, Clear Count Badge */}
+            {/* Bold, Enlarged Count Badge */}
             <div
-              className={`absolute -bottom-1 -right-1 min-w-[14px] h-[14px] px-1 rounded-full border text-[8px] font-black flex items-center justify-center shadow-md z-10 font-mono ${
+              className={`absolute -bottom-1 -right-1 min-w-[20px] h-[20px] px-1 rounded-full border-2 text-[10px] font-black flex items-center justify-center shadow-lg z-20 font-mono leading-none ${
                 contrabandCount > 0
-                  ? 'bg-rose-600 border-black text-white'
-                  : 'bg-black/90 border-white/40 text-white/50'
+                  ? 'bg-rose-500 border-black text-white ring-1 ring-rose-200'
+                  : 'bg-black border-white/40 text-white/50'
               }`}
             >
               {contrabandCount}
@@ -345,11 +412,53 @@ export const TabletopBoard: React.FC<TabletopBoardProps> = ({
     return pos === 'mid-right';
   });
 
-  // Render an individual Opponent Station (Sleek, Compact, No Overlapping)
-  const renderOpponentStation = (p: Player) => {
+  // Render Floating Goods Tray (Completely isolated in an absolute layer to prevent ANY layout shift)
+  const renderFloatingGoodsTray = (
+    player: Player,
+    position: 'top' | 'left' | 'right' | 'bottom',
+    onClose: () => void
+  ) => {
+    let placementClass = '';
+    if (position === 'left') {
+      placementClass = 'left-full top-0 ml-2';
+    } else if (position === 'right') {
+      placementClass = 'right-full top-0 mr-2';
+    } else if (position === 'top') {
+      placementClass = 'top-full mt-2 left-1/2 -translate-x-1/2';
+    } else {
+      placementClass = 'bottom-full mb-2 left-1/2 -translate-x-1/2';
+    }
+
+    return (
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className={`absolute ${placementClass} z-50 bg-[#120804]/98 border-2 border-amber-500/90 rounded-2xl p-2.5 shadow-[0_20px_50px_rgba(0,0,0,0.95)] backdrop-blur-md flex flex-col items-center min-w-[280px] pointer-events-auto animate-fadeIn`}
+      >
+        <div className="flex items-center justify-between w-full pb-1 mb-1.5 border-b border-amber-600/40 text-[11px] font-bold text-amber-200">
+          <span className="flex items-center gap-1.5">
+            <span className="text-base">{player.avatar || '👤'}</span>
+            <span>โกดังสินค้า: {player.name}</span>
+          </span>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-amber-400 hover:text-white px-2 py-0.5 rounded bg-black/60 border border-amber-500/40 text-[9.5px] hover:bg-rose-900/60 transition-all cursor-pointer"
+          >
+            ✕ ปิด
+          </button>
+        </div>
+        {renderGoodsStacks(player)}
+      </div>
+    );
+  };
+
+  // Render an individual Opponent Station (Strictly Fixed Footprint, Zero Shift, Separate Layer Goods)
+  const renderOpponentStation = (p: Player, seatPos: 'top' | 'left' | 'right' = 'top') => {
     const isTarget = p.id === gameState.activeInspectTargetId;
     const isInspectorPlayer = p.isInspector;
     const targetBribes = (gameState.bribeOffers || []).filter((b) => b.targetPlayerId === p.id);
+    const isExpanded = expandedPlayerIds[p.id] !== undefined ? expandedPlayerIds[p.id] : showTableGoods;
+    const isAfkOrDisconnected = p.isAfk || !p.isConnected;
 
     return (
       <div
@@ -360,19 +469,30 @@ export const TabletopBoard: React.FC<TabletopBoardProps> = ({
             : undefined
         }
         className={`
-          relative rounded-xl p-1.5 transition-all duration-200 select-none flex flex-col items-center w-36 sm:w-44 shrink-0
+          relative rounded-xl p-2 select-none flex flex-col items-center w-36 sm:w-40 md:w-44 shrink-0 transition-all duration-200
           ${
             isTarget
-              ? 'bg-amber-950/90 border-2 border-amber-400 ring-2 ring-amber-400/50 shadow-[0_0_20px_rgba(245,158,11,0.6)] scale-105 z-20'
+              ? 'bg-amber-950/90 border-2 border-amber-400 ring-2 ring-amber-400/50 shadow-[0_0_25px_rgba(245,158,11,0.7)] scale-105 z-20'
               : isInspectorPlayer
               ? 'bg-blue-950/70 border-2 border-blue-400 shadow-md'
-              : 'bg-black/75 border border-amber-900/50 hover:border-amber-500/70 shadow'
+              : 'bg-black/80 border border-amber-900/60 hover:border-amber-500/70 shadow-lg'
           }
           ${me?.isInspector && !isInspectorPlayer ? 'cursor-pointer hover:scale-105' : ''}
         `}
       >
-        {/* Top: Avatar + Name + Cash in a single compact row */}
-        <div className="flex items-center gap-1.5 w-full justify-between">
+        {/* Floating Goods Overlay Layer (Zero Layout Shift) */}
+        {isExpanded && renderFloatingGoodsTray(p, seatPos, () => togglePlayerGoods(p.id))}
+
+        {/* Top: Avatar + Name + Cash in a single row with clickable Toggle for Goods */}
+        <div
+          onClick={(e) => {
+            e.stopPropagation();
+            togglePlayerGoods(p.id);
+            sounds.playFlip();
+          }}
+          className="flex items-center gap-1.5 w-full justify-between cursor-pointer p-0.5 rounded-lg hover:bg-white/5 transition-all"
+          title="คลิกเพื่อเปิด/หุบ ดูสินค้าของคนนี้"
+        >
           <div className="relative w-8 h-8 rounded-lg bg-[#2a170b] border border-amber-600/80 flex items-center justify-center shrink-0">
             <span className="text-lg filter drop-shadow">{p.avatar || '👤'}</span>
             {isInspectorPlayer && (
@@ -380,22 +500,53 @@ export const TabletopBoard: React.FC<TabletopBoardProps> = ({
                 ⭐
               </div>
             )}
+            {isAfkOrDisconnected && (
+              <div className="absolute -bottom-1 -left-1 px-1 rounded bg-rose-600 border border-rose-300 text-[7px] font-black text-white animate-pulse" title="ขาดการเชื่อมต่อ / บอทเล่นแทน">
+                AFK
+              </div>
+            )}
           </div>
 
-          <div className="flex-1 min-w-0 px-1">
-            <div className="font-bold text-[10px] text-amber-200 truncate leading-tight">
-              {p.name || 'GANGSTER'}
+          <div className="flex-1 min-w-0 px-1 text-left">
+            <div className="font-bold text-[10px] text-amber-200 truncate leading-tight flex items-center gap-1">
+              <span>{p.name || 'GANGSTER'}</span>
             </div>
-            <div className="font-extrabold text-[9px] text-emerald-400 font-mono">
-              ${p.cash || 0}
+            <div className="font-extrabold text-[9px] text-emerald-400 font-mono flex items-center justify-between">
+              <span>${p.cash || 0}</span>
+              {isAfkOrDisconnected && (
+                <span className="text-[7.5px] bg-rose-950 text-rose-300 px-1 py-0.2 rounded border border-rose-600/50 font-sans">
+                  🤖 บอท
+                </span>
+              )}
             </div>
+          </div>
+
+          <div className="text-[9px] text-amber-400/80 shrink-0 px-1 py-0.5 rounded bg-black/50 border border-amber-500/30">
+            {isExpanded ? '▲ หุบ' : '▼ สินค้า'}
           </div>
         </div>
 
-        {/* 5 Goods Piles (Miniature) */}
-        <div className="w-full mt-1 pt-1 border-t border-amber-500/20 flex justify-center">
-          {renderGoodsStacks(p)}
-        </div>
+        {/* Manual AFK / Bot takeover toggle for other human players */}
+        {!p.isBot && !p.isInspector && (
+          <div className="w-full flex items-center justify-between mt-1 pt-0.5 border-t border-white/10 text-[8px]">
+            <span className="text-white/40">{isAfkOrDisconnected ? '⚠️ บอทแทน' : '🟢 ปกติ'}</span>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (onTogglePlayerAfk) onTogglePlayerAfk(p.id);
+              }}
+              className={`px-1 py-0.2 rounded border font-sans cursor-pointer transition-all ${
+                isAfkOrDisconnected
+                  ? 'bg-emerald-950 text-emerald-300 border-emerald-500/50 hover:bg-emerald-900'
+                  : 'bg-black/50 text-amber-300/70 border-white/10 hover:border-amber-500/50 hover:text-amber-200'
+              }`}
+              title={isAfkOrDisconnected ? 'คลิกเพื่อยกเลิกสถานะบอทแทน' : 'หากผู้เล่นนิ่งเฉยหรือไม่เล่น คลิกเพื่อให้ AI เล่นแทน'}
+            >
+              {isAfkOrDisconnected ? '🟢 ปลดบอท' : '🤖 ให้บอทแทน'}
+            </button>
+          </div>
+        )}
 
         {/* Packed Secret Crate */}
         {p.crate && !isInspectorPlayer && (
@@ -403,7 +554,7 @@ export const TabletopBoard: React.FC<TabletopBoardProps> = ({
             <div className="flex items-center justify-between text-[8.5px] text-amber-300 leading-tight">
               <span>📦 {p.crate?.cardsCount || 0} ใบ</span>
               {p.crate?.declaredType && (
-                <span className="text-emerald-300 font-bold truncate max-w-[80px]">
+                <span className="text-emerald-300 font-bold truncate max-w-[70px]">
                   {theme.legalGoods[p.crate.declaredType]?.name || p.crate.declaredType}
                 </span>
               )}
@@ -423,7 +574,7 @@ export const TabletopBoard: React.FC<TabletopBoardProps> = ({
                   if (onOpenBribePrompt) onOpenBribePrompt(p.id);
                   openBribeModalFor(p.id);
                 }}
-                className="mt-1 w-full py-0.5 text-[8px] bg-gradient-to-r from-amber-700 to-amber-900 border border-amber-500/60 text-amber-200 font-bold rounded hover:brightness-125 transition-all shadow cursor-pointer"
+                className="mt-0.5 w-full py-0.5 text-[8px] bg-gradient-to-r from-amber-700 to-amber-900 border border-amber-500/60 text-amber-200 font-bold rounded hover:brightness-125 transition-all shadow cursor-pointer"
               >
                 เสนอสินบน 💵
               </button>
@@ -448,101 +599,245 @@ export const TabletopBoard: React.FC<TabletopBoardProps> = ({
       <div className="absolute top-0 left-1/4 w-96 h-96 bg-amber-500/10 rounded-full blur-3xl pointer-events-none -translate-y-1/2" />
       <div className="absolute top-0 right-1/4 w-96 h-96 bg-amber-500/10 rounded-full blur-3xl pointer-events-none -translate-y-1/2" />
 
-      {/* 1. TOP STATUS BANNER */}
-      <div className="relative z-20 flex flex-wrap items-center justify-between gap-2 mb-1 px-1 shrink-0">
-        {/* Room & Theme Title */}
-        <div className="flex items-center gap-2">
-          <div className="px-2.5 py-1 bg-black/80 border border-amber-600/60 rounded-xl flex items-center gap-2 shadow">
-            <span className="text-base">🎩</span>
-            <div>
-              <div className="font-['Press_Start_2P',monospace] text-[8.5px] text-amber-300">
-                {theme.name.toUpperCase()}
-              </div>
-              <div className="text-[9px] text-amber-100/70">
-                รอบที่ {gameState.currentRound}/{gameState.totalRounds || 6}
+      {/* 1. TOP STATUS & TURN BANNER */}
+      <div className="relative z-20 flex flex-col gap-1 mb-1 px-1 shrink-0">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          {/* Room & Theme Title */}
+          <div className="flex items-center gap-2">
+            <div className="px-2.5 py-1 bg-black/80 border border-amber-600/60 rounded-xl flex items-center gap-2 shadow">
+              <span className="text-base">🎩</span>
+              <div>
+                <div className="font-['Press_Start_2P',monospace] text-[8.5px] text-amber-300">
+                  {theme.name.toUpperCase()}
+                </div>
+                <div className="text-[9px] text-amber-100/70">
+                  {t.round} {gameState.currentRound}/{gameState.totalRounds || 6}
+                </div>
               </div>
             </div>
           </div>
-        </div>
 
-        {/* Phase Indicator */}
-        <div className="bg-black/80 border border-amber-500/60 rounded-xl px-3 py-1 text-center shadow-lg mx-auto">
-          <div className="flex items-center justify-center gap-2 text-xs font-bold text-white">
-            <span className="text-amber-400">เฟสปัจจุบัน:</span>
-            <span className="text-amber-200 font-extrabold bg-amber-950 px-2 py-0.5 rounded-lg border border-amber-500/60 font-mono">
-              {gameState.phase}
-            </span>
-            {inspector && (
-              <span className="text-xs text-blue-300 ml-1">
-                (ผู้คุมด่าน: <strong>{inspector.name}</strong>)
+          {/* DYNAMIC TURN & ACTION BANNER (UX Highlight: Who is doing what) */}
+          {(() => {
+            const activeMarketPlayer = gameState.players?.find((p) => p.id === gameState.activeMarketPlayerId);
+            const isMyTurn =
+              (gameState.phase === 'MARKET' && gameState.activeMarketPlayerId === myPlayerId) ||
+              (gameState.phase === 'LOADING' && !me?.isInspector && !me?.hasPackedCrate) ||
+              (gameState.phase === 'DECLARATION' && !me?.isInspector && me?.hasPackedCrate && !me?.hasDeclared) ||
+              (gameState.phase === 'INSPECTION' && me?.isInspector);
+
+            let turnText = '';
+            let actionHint = '';
+            let actorName = '';
+            let actorAvatar = '👤';
+
+            if (gameState.phase === 'MARKET') {
+              actorName = activeMarketPlayer?.name || '...';
+              actorAvatar = activeMarketPlayer?.avatar || '🛒';
+              if (activeMarketPlayer?.id === myPlayerId) {
+                turnText = t.turnYourTurn;
+                actionHint = t.turnMarketAction;
+              } else {
+                turnText = `${t.turnWaitingFor} ${actorName}`;
+                actionHint = language === 'th' ? `กำลังเลือกเปลี่ยนการ์ดในตลาด...` : `is choosing market cards...`;
+              }
+            } else if (gameState.phase === 'LOADING') {
+              actorAvatar = '📦';
+              if (!me?.isInspector && !me?.hasPackedCrate) {
+                turnText = t.turnYourTurn;
+                actionHint = t.turnLoadingAction;
+              } else if (me?.isInspector) {
+                turnText = language === 'th' ? 'ผู้เล่นกำลังจัดของใส่ลัง...' : 'Merchants are packing crates...';
+                actionHint = language === 'th' ? 'เตรียมตัวเปิดด่านตรวจค้น' : 'Prepare for customs checkpoint';
+              } else {
+                turnText = language === 'th' ? 'คุณจัดของเสร็จแล้ว' : 'Crate packed';
+                actionHint = language === 'th' ? 'รอผู้เล่นคนอื่นจัดของให้เสร็จ...' : 'Waiting for others to finish packing...';
+              }
+            } else if (gameState.phase === 'DECLARATION') {
+              actorAvatar = '🗣️';
+              if (!me?.isInspector && !me?.hasDeclared) {
+                turnText = t.turnYourTurn;
+                actionHint = t.turnDeclarationAction;
+              } else {
+                turnText = language === 'th' ? 'รอการแจ้งยอดสินค้า' : 'Goods declaration in progress';
+                actionHint = language === 'th' ? `แจ้งสินค้ากับสารวัตร ${inspector?.name || ''}` : `Declaring to Inspector ${inspector?.name || ''}`;
+              }
+            } else if (gameState.phase === 'INSPECTION' || gameState.phase === 'NEGOTIATION') {
+              actorName = inspector?.name || '...';
+              actorAvatar = inspector?.avatar || '👮';
+              if (me?.isInspector) {
+                turnText = t.turnYourTurn;
+                actionHint = t.turnInspectionAction;
+              } else {
+                turnText = `${inspector?.name || ''} (${t.inspectorBadge})`;
+                actionHint = t.turnNegotiationAction;
+              }
+            } else if (gameState.phase === 'INSPECTING') {
+              actorAvatar = '🔍';
+              turnText = t.phaseInspecting;
+              actionHint = language === 'th' ? 'กำลังเปิดลังตรวจค้น...' : 'Searching the crate for contraband...';
+            } else if (gameState.phase === 'ROUND_END') {
+              actorAvatar = '🏁';
+              turnText = t.phaseRoundEnd;
+              actionHint = language === 'th' ? 'จบรอบนี้แล้ว พร้อมเริ่มรอบถัดไป' : 'Round ended, ready for next round';
+            }
+
+            return (
+              <div
+                className={`flex-1 max-w-xl mx-auto rounded-2xl px-3 py-1.5 border flex items-center justify-between gap-2 shadow-xl transition-all ${
+                  isMyTurn
+                    ? 'bg-gradient-to-r from-amber-950 via-[#3a200a] to-amber-950 border-amber-400 ring-2 ring-amber-400/80 shadow-[0_0_25px_rgba(245,158,11,0.5)] animate-pulse'
+                    : 'bg-black/85 border-amber-500/40'
+                }`}
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-xl shrink-0">{actorAvatar}</span>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className={`text-xs font-extrabold ${isMyTurn ? 'text-amber-300' : 'text-white'}`}>
+                        {turnText}
+                      </span>
+                      {isMyTurn && (
+                        <span className="text-[8px] bg-amber-400 text-black font-extrabold px-1.5 py-0.2 rounded uppercase animate-bounce">
+                          ACTION!
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-[10px] text-amber-200/80 truncate">
+                      {actionHint}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="text-right shrink-0">
+                  <span className="text-[8.5px] font-mono font-bold px-2 py-0.5 rounded-full bg-black/60 border border-amber-500/50 text-amber-300 block">
+                    {gameState.phase}
+                  </span>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Quick Utility Tools & Toggles */}
+          <div className="flex items-center gap-1.5">
+            {/* Master Toggle Table Goods Stacks for All Players */}
+            <button
+              type="button"
+              onClick={toggleAllPlayerGoods}
+              className={`px-2.5 py-1 rounded-xl border text-xs font-bold transition-all flex items-center gap-1.5 shadow cursor-pointer active:scale-95 ${
+                showTableGoods
+                  ? 'bg-amber-950/90 border-amber-400 text-amber-300 shadow-[0_0_12px_rgba(245,158,11,0.4)] ring-1 ring-amber-400/50'
+                  : 'bg-black/80 border-white/20 text-white/60 hover:text-white'
+              }`}
+              title={showTableGoods ? 'คลิกเพื่อหุบสินค้าของผู้เล่นทุกคนบนโต๊ะ' : 'คลิกเพื่อกางแสดงสินค้าของผู้เล่นทุกคนบนโต๊ะ'}
+            >
+              <span>{showTableGoods ? '📦' : '🙈'}</span>
+              <span className="hidden sm:inline font-mono">
+                {showTableGoods
+                  ? (language === 'th' ? '📦 สินค้าบนโต๊ะ (เปิด)' : '📦 Goods (Shown)')
+                  : (language === 'th' ? '🙈 สินค้าบนโต๊ะ (ซ่อน)' : '🙈 Goods (Hidden)')}
               </span>
+            </button>
+
+            {/* Toggle Collapsed Log */}
+            <button
+              type="button"
+              onClick={() => setIsLogCollapsed(!isLogCollapsed)}
+              className={`px-2 py-1 rounded-xl border text-xs font-bold transition-all flex items-center gap-1 shadow cursor-pointer active:scale-95 ${
+                !isLogCollapsed
+                  ? 'bg-amber-950/90 border-amber-400 text-amber-300'
+                  : 'bg-black/80 border-white/20 text-white/60 hover:text-white'
+              }`}
+              title="เปิด/ปิด แถบ Log บันทึกเหตุการณ์"
+            >
+              <span>📜</span>
+              <span className="hidden sm:inline">{isLogCollapsed ? '+ LOG' : '- LOG'}</span>
+            </button>
+
+            {onOpenWarehouse && (
+              <button
+                type="button"
+                onClick={onOpenWarehouse}
+                className="px-2 py-1 rounded-xl bg-black/80 border border-amber-600/50 hover:bg-amber-950 text-amber-300 text-xs shadow transition-all font-bold flex items-center gap-1"
+                title="เปิดโกดังของคุณ"
+              >
+                <span>🏛️</span>
+                <span className="hidden sm:inline">{t.warehouse}</span>
+              </button>
+            )}
+            {onToggleSound && (
+              <button
+                type="button"
+                onClick={onToggleSound}
+                className="p-1 px-1.5 rounded-xl bg-black/80 border border-amber-600/50 hover:bg-amber-950 text-amber-300 text-xs shadow transition-all"
+                title={soundEnabled ? t.soundOff : t.soundOn}
+              >
+                {soundEnabled ? '🔊' : '🔇'}
+              </button>
+            )}
+            {onOpenRules && (
+              <button
+                type="button"
+                onClick={onOpenRules}
+                className="p-1 px-2 rounded-xl bg-black/80 border border-amber-600/50 hover:bg-amber-950 text-amber-300 text-xs shadow transition-all font-bold"
+                title={t.rules}
+              >
+                📖 {t.rules}
+              </button>
+            )}
+            {onToggleStealthMode && (
+              <button
+                type="button"
+                onClick={onToggleStealthMode}
+                className={`p-1 px-2 rounded-xl border text-xs font-bold transition-all flex items-center gap-1 shadow ${
+                  isStealthMode
+                    ? 'bg-amber-950 border-amber-400 text-amber-300 ring-2 ring-amber-400'
+                    : 'bg-black/80 border-amber-600/50 hover:bg-amber-950 text-amber-300'
+                }`}
+                title={isStealthMode ? t.showCards : t.hideCards}
+              >
+                <span>{isStealthMode ? '🙈' : '👁️'}</span>
+                <span>{t.hideCards}</span>
+              </button>
+            )}
+
+            {/* Language Switcher */}
+            {onToggleLanguage && (
+              <button
+                type="button"
+                onClick={onToggleLanguage}
+                className="px-2 py-1 rounded-xl bg-black/80 border border-amber-400 text-amber-300 text-xs shadow font-extrabold hover:bg-amber-950 cursor-pointer active:scale-95"
+                title="สลับภาษา / Toggle Language"
+              >
+                {language === 'th' ? '🇹🇭 TH' : '🇬🇧 EN'}
+              </button>
             )}
           </div>
-        </div>
-
-        {/* Quick Utility Tools */}
-        <div className="flex items-center gap-1.5">
-          {onOpenWarehouse && (
-            <button
-              onClick={onOpenWarehouse}
-              className="px-2 py-1 rounded-xl bg-black/80 border border-amber-600/50 hover:bg-amber-950 text-amber-300 text-xs shadow transition-all font-bold flex items-center gap-1"
-              title="เปิดโกดังของคุณ"
-            >
-              <span>🏛️</span>
-              <span className="hidden sm:inline">โกดัง</span>
-            </button>
-          )}
-          {onToggleSound && (
-            <button
-              onClick={onToggleSound}
-              className="p-1 px-1.5 rounded-xl bg-black/80 border border-amber-600/50 hover:bg-amber-950 text-amber-300 text-xs shadow transition-all"
-              title={soundEnabled ? 'ปิดเสียง' : 'เปิดเสียง'}
-            >
-              {soundEnabled ? '🔊' : '🔇'}
-            </button>
-          )}
-          {onOpenRules && (
-            <button
-              onClick={onOpenRules}
-              className="p-1 px-2 rounded-xl bg-black/80 border border-amber-600/50 hover:bg-amber-950 text-amber-300 text-xs shadow transition-all font-bold"
-              title="กติกาการเล่น"
-            >
-              📖 กติกา
-            </button>
-          )}
-          {onToggleStealthMode && (
-            <button
-              onClick={onToggleStealthMode}
-              className={`p-1 px-2 rounded-xl border text-xs font-bold transition-all flex items-center gap-1 shadow ${
-                isStealthMode
-                  ? 'bg-amber-950 border-amber-400 text-amber-300 ring-2 ring-amber-400'
-                  : 'bg-black/80 border-amber-600/50 hover:bg-amber-950 text-amber-300'
-              }`}
-              title={isStealthMode ? 'แสดงการ์ด' : 'ซ่อนการ์ด'}
-            >
-              <span>{isStealthMode ? '🙈' : '👁️'}</span>
-              <span>ซ่อน</span>
-            </button>
-          )}
         </div>
       </div>
 
       {/* 2. MAIN 3-COLUMN BODY: WIDESCREEN BOARD OVERHAUL */}
-      <div className="relative z-10 flex flex-col lg:flex-row items-stretch justify-between gap-1.5 my-1 w-full flex-1 min-h-0 overflow-hidden">
+      <div className="relative z-10 flex flex-row items-stretch justify-between gap-1.5 my-1 w-full flex-1 min-h-0 overflow-hidden">
         
-        {/* === COLUMN 1 (LEFT): SLIM INTELLIGENCE GAME LOG === */}
-        <div className="w-full lg:w-44 xl:w-48 flex flex-col bg-black/85 border-2 border-[#5c3e21] rounded-xl p-2 shadow-2xl backdrop-blur-md shrink-0 justify-between min-h-0">
-          <div className="flex-1 flex flex-col min-h-0">
-            {/* Header & Filter Pills */}
-            <div className="flex items-center justify-between pb-1 border-b border-amber-600/40 mb-1 shrink-0">
-              <div className="flex items-center gap-1 text-xs font-bold text-amber-300 font-['Press_Start_2P',monospace] text-[7.5px]">
-                <span>📜</span>
-                <span>LOG</span>
+        {/* === COLUMN 1 (LEFT): SLIM INTELLIGENCE GAME LOG (Collapsible) === */}
+        {!isLogCollapsed ? (
+          <div className="w-36 sm:w-40 lg:w-44 xl:w-48 flex flex-col bg-black/85 border-2 border-[#5c3e21] rounded-xl p-1.5 sm:p-2 shadow-2xl backdrop-blur-md shrink-0 justify-between min-h-0 animate-fadeIn">
+            <div className="flex-1 flex flex-col min-h-0">
+              {/* Header & Filter Pills */}
+              <div className="flex items-center justify-between pb-1 border-b border-amber-600/40 mb-1 shrink-0">
+                <div className="flex items-center gap-1 text-xs font-bold text-amber-300 font-['Press_Start_2P',monospace] text-[7.5px]">
+                  <span>📜</span>
+                  <span>{language === 'th' ? 'LOG ข่าว' : 'LOGS'}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsLogCollapsed(true)}
+                  className="text-[10px] text-amber-400/70 hover:text-amber-200 px-1 rounded cursor-pointer"
+                  title="พับเก็บแถบ Log"
+                >
+                  ◀ พับ
+                </button>
               </div>
-              <span className="text-[8px] text-amber-400/80 font-mono bg-amber-950/80 px-1 py-0.2 rounded border border-amber-500/40">
-                {gameState.logs?.length || 0}
-              </span>
-            </div>
 
             {/* Filter Tabs */}
             <div className="flex items-center gap-1 mb-1 shrink-0">
@@ -615,9 +910,22 @@ export const TabletopBoard: React.FC<TabletopBoardProps> = ({
 
           {/* Quick Info Card at bottom of left column */}
           <div className="mt-1.5 pt-1.5 border-t border-amber-600/30 text-[9.5px] text-amber-200/70 italic text-center shrink-0">
-            บันทึกการส่งข่าวกรองสดจากโต๊ะเล่น
+            {language === 'th' ? 'บันทึกการส่งข่าวกรองสด' : 'Live table event feed'}
           </div>
         </div>
+        ) : (
+          <div className="w-9 flex flex-col items-center justify-start py-2 bg-black/85 border border-[#5c3e21] rounded-xl shrink-0 shadow-lg animate-fadeIn">
+            <button
+              type="button"
+              onClick={() => setIsLogCollapsed(false)}
+              className="p-1 rounded bg-amber-950/80 border border-amber-500/60 text-amber-300 text-xs hover:bg-amber-900 cursor-pointer shadow flex flex-col items-center gap-1"
+              title="เปิดแถบ Log"
+            >
+              <span>📜</span>
+              <span className="[writing-mode:vertical-lr] text-[8px] font-mono tracking-widest mt-1">LOGS</span>
+            </button>
+          </div>
+        )}
 
         {/* === COLUMN 2 (CENTER): ENLARGED OCTAGONAL FELT TABLE === */}
         <div className="flex-1 min-w-0 flex flex-col items-center justify-between min-h-0 h-full">
@@ -633,19 +941,19 @@ export const TabletopBoard: React.FC<TabletopBoardProps> = ({
 
             {/* TABLE TOP EDGE: Opponent Stations */}
             <div className="w-full flex items-start justify-around gap-1.5 mb-1.5 z-10 shrink-0">
-              {topOpponents.map((p) => renderOpponentStation(p))}
+              {topOpponents.map((p) => renderOpponentStation(p, 'top'))}
             </div>
 
             {/* TABLE MIDDLE: Left Seat + Center Decks / Checkpoint + Right Seat */}
             <div className="w-full flex items-center justify-between gap-2 sm:gap-3 my-1 z-10 flex-1 min-h-0">
               
               {/* Mid-Left Opponent */}
-              <div className="w-36 sm:w-44 flex justify-start shrink-0">
-                {leftOpponents.map((p) => renderOpponentStation(p))}
+              <div className="w-36 sm:w-40 md:w-44 flex justify-start shrink-0 relative">
+                {leftOpponents.map((p) => renderOpponentStation(p, 'left'))}
               </div>
 
               {/* TABLE CENTER: DECK, DISCARD PILES & CUSTOMS CHECKPOINT */}
-              <div className="flex-1 max-w-2xl mx-auto flex flex-col items-center justify-center p-3 sm:p-4 rounded-2xl bg-black/45 border border-amber-500/30 shadow-2xl backdrop-blur-sm">
+              <div className="flex-1 max-w-2xl w-full mx-auto flex flex-col items-center p-2 sm:p-3 rounded-2xl bg-black/60 border border-amber-500/40 shadow-2xl backdrop-blur-sm min-h-0 max-h-full overflow-y-auto scrollbar-thin scrollbar-thumb-amber-700/70 relative z-30 pointer-events-auto">
                 
                 {/* Central Decks Row: Left Discard | Draw Deck | Right Discard */}
                 <div className="flex items-center justify-center gap-3 sm:gap-6 w-full">
@@ -700,7 +1008,7 @@ export const TabletopBoard: React.FC<TabletopBoardProps> = ({
                         }
                       }}
                       className={`
-                        w-20 h-28 sm:w-24 sm:h-32 rounded-2xl p-1 flex items-center justify-center transition-all duration-200 relative
+                        w-20 h-28 sm:w-24 sm:h-32 rounded-2xl p-0.5 flex items-center justify-center transition-all duration-200 relative overflow-hidden
                         ${
                           gameState.discardPiles?.leftTop
                             ? 'border-2 border-emerald-500/80 bg-black/80 shadow-lg'
@@ -724,7 +1032,7 @@ export const TabletopBoard: React.FC<TabletopBoardProps> = ({
                       )}
 
                       {gameState.discardPiles?.leftTop ? (
-                        <ModularCard card={gameState.discardPiles.leftTop} size="sm" showBonusBadge={false} />
+                        <ModularCard card={gameState.discardPiles.leftTop} size="fill" showBonusBadge={false} />
                       ) : (
                         <span className="font-['Press_Start_2P',monospace] text-[8px] text-white/30 text-center">
                           EMPTY
@@ -747,6 +1055,19 @@ export const TabletopBoard: React.FC<TabletopBoardProps> = ({
                         className="mt-1 px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-black font-bold text-xs rounded-lg shadow active:scale-95"
                       >
                         จั่วใบนี้ 👈
+                      </button>
+                    )}
+
+                    {isMarketStep3 && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleConfirmMarketDiscards(pendingDiscards.map((c) => c.id), []);
+                        }}
+                        className="mt-1 px-2 py-1 bg-gradient-to-r from-emerald-600 to-teal-600 hover:brightness-110 text-white font-extrabold text-[10px] rounded-lg shadow-lg active:scale-95 border border-emerald-400 cursor-pointer"
+                      >
+                        ⚡ ทิ้งลงนี้ทั้งหมด
                       </button>
                     )}
                   </div>
@@ -850,7 +1171,7 @@ export const TabletopBoard: React.FC<TabletopBoardProps> = ({
                         }
                       }}
                       className={`
-                        w-20 h-28 sm:w-24 sm:h-32 rounded-2xl p-1 flex items-center justify-center transition-all duration-200 relative
+                        w-20 h-28 sm:w-24 sm:h-32 rounded-2xl p-0.5 flex items-center justify-center transition-all duration-200 relative overflow-hidden
                         ${
                           gameState.discardPiles?.rightTop
                             ? 'border-2 border-emerald-500/80 bg-black/80 shadow-lg'
@@ -874,7 +1195,7 @@ export const TabletopBoard: React.FC<TabletopBoardProps> = ({
                       )}
 
                       {gameState.discardPiles?.rightTop ? (
-                        <ModularCard card={gameState.discardPiles.rightTop} size="sm" showBonusBadge={false} />
+                        <ModularCard card={gameState.discardPiles.rightTop} size="fill" showBonusBadge={false} />
                       ) : (
                         <span className="font-['Press_Start_2P',monospace] text-[8px] text-white/30 text-center">
                           EMPTY
@@ -897,6 +1218,19 @@ export const TabletopBoard: React.FC<TabletopBoardProps> = ({
                         className="mt-1 px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-black font-bold text-xs rounded-lg shadow active:scale-95"
                       >
                         จั่วใบนี้ 👉
+                      </button>
+                    )}
+
+                    {isMarketStep3 && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleConfirmMarketDiscards([], pendingDiscards.map((c) => c.id));
+                        }}
+                        className="mt-1 px-2 py-1 bg-gradient-to-r from-emerald-600 to-teal-600 hover:brightness-110 text-white font-extrabold text-[10px] rounded-lg shadow-lg active:scale-95 border border-emerald-400 cursor-pointer"
+                      >
+                        ⚡ ทิ้งลงนี้ทั้งหมด
                       </button>
                     )}
                   </div>
@@ -962,17 +1296,17 @@ export const TabletopBoard: React.FC<TabletopBoardProps> = ({
                 )}
 
                 {isMarketStep3 && (
-                  <div className="mt-3 w-full bg-[#1e0e07] border-2 border-amber-400 rounded-2xl p-3 text-center shadow-2xl animate-fadeIn relative z-40 pointer-events-auto">
+                  <div className="mt-3 w-full bg-[#1e0e07] border-2 border-amber-400 rounded-2xl p-3 text-center shadow-2xl animate-fadeIn relative z-50 pointer-events-auto">
                     <div className="text-xs sm:text-sm font-bold text-amber-300 mb-1 flex items-center justify-center gap-1.5">
                       <span>📦</span>
                       <span>ขั้นตอนที่ 3/3: กำหนดปลายทางและลำดับการทิ้ง ({pendingDiscards.length} ใบ)</span>
                     </div>
                     <div className="text-[11px] text-amber-200/80 mb-2">
-                      เลือกให้แต่ละใบลง "กองซ้าย" หรือ "กองขวา" หรือคลิกที่กองบนโต๊ะได้ทันที:
+                      เลือกให้แต่ละใบลง "กองซ้าย" หรือ "กองขวา" หรือคลิกปุ่มยืนยันด้านล่าง:
                     </div>
 
-                    {/* Quick batch assign buttons */}
-                    <div className="flex items-center justify-center gap-2 mb-2 relative z-50">
+                    {/* Quick batch assign & instant finish buttons */}
+                    <div className="flex flex-wrap items-center justify-center gap-1.5 mb-2 relative z-50">
                       <button
                         type="button"
                         onClick={(e) => {
@@ -982,9 +1316,9 @@ export const TabletopBoard: React.FC<TabletopBoardProps> = ({
                           setStep3Targets(allLeft);
                           sounds.playFlip();
                         }}
-                        className="px-3.5 py-1.5 text-xs font-extrabold rounded-xl bg-emerald-950/90 border border-emerald-500/80 text-emerald-300 hover:bg-emerald-800 active:scale-95 transition-all shadow cursor-pointer pointer-events-auto"
+                        className="px-2.5 py-1 text-xs font-bold rounded-xl bg-emerald-950/90 border border-emerald-500/70 text-emerald-300 hover:bg-emerald-800 active:scale-95 transition-all shadow cursor-pointer"
                       >
-                        ⬅️ ลงกองซ้ายทั้งหมด
+                        ⬅️ เลือกกองซ้ายทั้งหมด
                       </button>
                       <button
                         type="button"
@@ -995,9 +1329,31 @@ export const TabletopBoard: React.FC<TabletopBoardProps> = ({
                           setStep3Targets(allRight);
                           sounds.playFlip();
                         }}
-                        className="px-3.5 py-1.5 text-xs font-extrabold rounded-xl bg-emerald-950/90 border border-emerald-500/80 text-emerald-300 hover:bg-emerald-800 active:scale-95 transition-all shadow cursor-pointer pointer-events-auto"
+                        className="px-2.5 py-1 text-xs font-bold rounded-xl bg-emerald-950/90 border border-emerald-500/70 text-emerald-300 hover:bg-emerald-800 active:scale-95 transition-all shadow cursor-pointer"
                       >
-                        ลงกองขวาทั้งหมด ➡️
+                        เลือกกองขวาทั้งหมด ➡️
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleConfirmMarketDiscards(pendingDiscards.map((c) => c.id), []);
+                        }}
+                        className="px-2.5 py-1 text-xs font-extrabold rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:brightness-110 text-black active:scale-95 transition-all shadow cursor-pointer border border-amber-300"
+                        title="ทิ้งการ์ดทั้งหมด 4 ใบลงกองซ้าย และจบทันที"
+                      >
+                        ⚡ ทิ้งซ้ายทั้งหมดทันที
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleConfirmMarketDiscards([], pendingDiscards.map((c) => c.id));
+                        }}
+                        className="px-2.5 py-1 text-xs font-extrabold rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:brightness-110 text-black active:scale-95 transition-all shadow cursor-pointer border border-amber-300"
+                        title="ทิ้งการ์ดทั้งหมด 4 ใบลงกองขวา และจบทันที"
+                      >
+                        ⚡ ทิ้งขวาทั้งหมดทันที
                       </button>
                     </div>
 
@@ -1091,21 +1447,20 @@ export const TabletopBoard: React.FC<TabletopBoardProps> = ({
                     </div>
                     <button
                       type="button"
+                      disabled={isSubmittingDiscards}
                       onClick={(e) => {
+                        e.preventDefault();
                         e.stopPropagation();
-                        sounds.playCrate();
-                        const leftIds = effectiveOrder.filter((id) => (step3Targets[id] || 'left') === 'left');
-                        const rightIds = effectiveOrder.filter((id) => step3Targets[id] === 'right');
-                        const finalLeft = leftIds.length === 0 && rightIds.length === 0 ? pendingDiscards.map((c) => c.id) : leftIds;
-                        if (onMarketFinalizeDiscards) {
-                          onMarketFinalizeDiscards(finalLeft, rightIds);
-                        } else if (onMarketSplitDiscard) {
-                          onMarketSplitDiscard(finalLeft, rightIds);
-                        }
+                        handleConfirmMarketDiscards();
                       }}
-                      className="mt-2.5 px-6 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-extrabold text-xs sm:text-sm rounded-xl shadow-lg border border-amber-300 active:scale-95 transition-all cursor-pointer relative z-50 pointer-events-auto ring-2 ring-amber-400/40"
+                      onPointerDown={(e) => {
+                        e.stopPropagation();
+                      }}
+                      className="mt-3 w-full max-w-sm mx-auto py-2.5 px-6 bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 hover:from-amber-400 hover:to-amber-300 text-black font-extrabold text-xs sm:text-sm rounded-xl shadow-xl border-2 border-amber-200 active:scale-95 transition-all cursor-pointer relative z-50 pointer-events-auto ring-2 ring-amber-400 block disabled:opacity-50"
                     >
-                      ✅ ยืนยันการทิ้งการ์ด ({pendingDiscards.length} ใบ)
+                      {isSubmittingDiscards
+                        ? '⏳ กำลังส่งข้อมูลไปยังเซิร์ฟเวอร์...'
+                        : `✅ ยืนยันการทิ้งการ์ด (${pendingDiscards.length} ใบ)`}
                     </button>
                   </div>
                 )}
@@ -1293,14 +1648,14 @@ export const TabletopBoard: React.FC<TabletopBoardProps> = ({
 
                         {/* Merchant Universal Bribe Action Button */}
                         {!me?.isInspector && (
-                          <div className="mt-2.5 text-center">
+                          <div className="mt-2.5 text-center relative z-50 pointer-events-auto">
                             <button
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 openBribeModalFor(activeTargetPlayer.id);
                               }}
-                              className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-extrabold text-xs shadow-lg border border-amber-300 active:scale-95 transition-all cursor-pointer inline-flex items-center gap-1.5"
+                              className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-extrabold text-xs shadow-lg border border-amber-300 active:scale-95 transition-all cursor-pointer inline-flex items-center gap-1.5 relative z-50 pointer-events-auto"
                             >
                               <span>💰</span>
                               <span>
@@ -1335,52 +1690,61 @@ export const TabletopBoard: React.FC<TabletopBoardProps> = ({
               </div>
 
               {/* Mid-Right Opponent */}
-              <div className="w-36 sm:w-44 flex justify-end shrink-0">
-                {rightOpponents.map((p) => renderOpponentStation(p))}
+              <div className="w-36 sm:w-40 md:w-44 flex justify-end shrink-0 relative">
+                {rightOpponents.map((p) => renderOpponentStation(p, 'right'))}
               </div>
 
             </div>
 
             {/* TABLE BOTTOM FELT: Active Player's Warehouse & Crate */}
-            {me && (
-              <div className="w-full mt-1.5 pt-1.5 border-t border-amber-500/25 flex flex-col sm:flex-row items-center justify-between gap-2 px-2 z-10 shrink-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-2xl">{me.avatar}</span>
-                  <div>
-                    <div className="font-bold text-xs text-amber-200 flex items-center gap-1.5">
-                      <span>{me.name}</span>
-                      <span className="text-[7.5px] bg-amber-500 text-black px-1 py-0.2 rounded font-extrabold">YOU</span>
-                    </div>
-                    <div className="font-mono text-[10px] text-emerald-400 font-bold">
-                      💵 ${me.cash}
-                    </div>
-                  </div>
-                </div>
+            {me && (() => {
+              const isMyGoodsExpanded = expandedPlayerIds[me.id] !== undefined ? expandedPlayerIds[me.id] : showTableGoods;
+              return (
+                <div className="w-full mt-1.5 pt-1.5 border-t border-amber-500/25 flex flex-col sm:flex-row items-center justify-between gap-2 px-2 z-10 shrink-0 relative">
+                  {/* Floating Goods Overlay Layer for Me (Zero table squeeze) */}
+                  {isMyGoodsExpanded && renderFloatingGoodsTray(me, 'bottom', () => togglePlayerGoods(me.id))}
 
-                {/* Your 5 Goods Piles on Table Felt */}
-                <div className="flex flex-col items-center">
-                  <div className="text-[7.5px] font-['Press_Start_2P',monospace] text-amber-300/80 mb-0.5">
-                    YOUR GOODS PILES
+                  <div
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      togglePlayerGoods(me.id);
+                      sounds.playFlip();
+                    }}
+                    className="flex items-center gap-2 cursor-pointer p-1 rounded-lg hover:bg-white/5 transition-all"
+                    title="คลิกเพื่อเปิด/หุบ ดูสินค้าของคุณ"
+                  >
+                    <span className="text-2xl">{me.avatar}</span>
+                    <div>
+                      <div className="font-bold text-xs text-amber-200 flex items-center gap-1.5">
+                        <span>{me.name}</span>
+                        <span className="text-[7.5px] bg-amber-500 text-black px-1 py-0.2 rounded font-extrabold">YOU</span>
+                      </div>
+                      <div className="font-mono text-[10px] text-emerald-400 font-bold">
+                        💵 ${me.cash}
+                      </div>
+                    </div>
+                    <div className="text-[10px] text-amber-400/80 shrink-0 px-1.5 py-0.5 rounded bg-black/50 border border-amber-500/30">
+                      {isMyGoodsExpanded ? '▲ หุบ' : '▼ สินค้า'}
+                    </div>
                   </div>
-                  {renderGoodsStacks(me)}
-                </div>
 
-                {/* Your Crate status */}
-                {me.crate && !me.isInspector && (
-                  <div className="bg-[#1f0f08] border border-amber-600/70 rounded-lg px-2.5 py-1 text-center shadow">
-                    <span className="text-[10px] font-bold text-amber-300">
-                      📦 เกวียน: {me.crate.cardsCount} ชิ้น ({theme.legalGoods[me.crate.declaredType]?.name || me.crate.declaredType})
-                    </span>
-                  </div>
-                )}
-              </div>
-            )}
+                  {/* Your Crate status */}
+                  {me.crate && !me.isInspector && (
+                    <div className="bg-[#1f0f08] border border-amber-600/70 rounded-lg px-2.5 py-1 text-center shadow">
+                      <span className="text-[10px] font-bold text-amber-300">
+                        📦 เกวียน: {me.crate.cardsCount} ชิ้น ({theme.legalGoods[me.crate.declaredType]?.name || me.crate.declaredType})
+                      </span>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
           </div>
         </div>
 
         {/* === COLUMN 3 (RIGHT): SLIM PHASE TRACKER & TACTICS === */}
-        <div className="w-full lg:w-28 xl:w-32 flex flex-col bg-black/85 border-2 border-[#5c3e21] rounded-xl p-2 shadow-2xl backdrop-blur-md shrink-0 justify-between min-h-0 overflow-y-auto">
+        <div className="w-24 sm:w-28 xl:w-32 flex flex-col bg-black/85 border-2 border-[#5c3e21] rounded-xl p-1.5 sm:p-2 shadow-2xl backdrop-blur-md shrink-0 justify-between min-h-0 overflow-y-auto">
           <div className="flex flex-col gap-1.5">
             {/* Header */}
             <div className="pb-1 border-b border-amber-600/40 text-center shrink-0">

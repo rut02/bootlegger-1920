@@ -45,9 +45,26 @@ export class RoomManager {
     if (!player) return null;
 
     player.isConnected = true;
+    player.isAfk = false;
     this.registerSocket(socketId, roomCode, playerId);
-    game.addLog(`${player.name} เชื่อมต่อกลับเข้ามาแล้ว`, 'info');
+    game.addLog(`✅ ${player.name} เชื่อมต่อกลับเข้ามาแล้ว (ปิดระบบบอทแทน)`, 'info');
     return game;
+  }
+
+  public removePlayerFromRoom(socketId: string): { roomCode: string; playerId: string } | null {
+    const mapping = this.socketMap.get(socketId);
+    if (!mapping) return null;
+
+    this.socketMap.delete(socketId);
+    const room = this.rooms.get(mapping.roomCode);
+    if (room) {
+      room.removePlayer(mapping.playerId);
+      const anyHuman = room.players.some((p) => p.isConnected && !p.isBot);
+      if (!anyHuman) {
+        this.rooms.delete(mapping.roomCode);
+      }
+    }
+    return mapping;
   }
 
   public handleDisconnect(socketId: string): { roomCode: string; playerId: string } | null {
@@ -60,7 +77,9 @@ export class RoomManager {
       const player = room.players.find((p) => p.id === mapping.playerId);
       if (player) {
         player.isConnected = false;
-        room.addLog(`${player.name} ขาดการเชื่อมต่อชั่วคราว`, 'info');
+        player.isAfk = true;
+        room.addLog(`⚠️ ${player.name} ตัดการเชื่อมต่อ (AFK) — บอท AI เข้าเล่นแทนชั่วคราว`, 'alert');
+        room.scheduleBotAction();
       }
 
       // If room has no active humans and still in lobby, clean up after delay

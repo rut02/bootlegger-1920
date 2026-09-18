@@ -55,13 +55,13 @@ export class GameEngine {
   }
 
   public addLog(text: string, type: GameLogEntry['type'] = 'info'): void {
-    this.logs.unshift({
+    this.logs.push({
       id: `log_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       timestamp: Date.now(),
       text,
       type,
     });
-    if (this.logs.length > 50) this.logs.pop();
+    if (this.logs.length > 50) this.logs.shift();
   }
 
   public addPlayer(name: string, avatar: string, isBot: boolean = false): Player {
@@ -466,6 +466,17 @@ export class GameEngine {
     }
 
     player.pendingDiscards = [];
+
+    // Ensure player hand is full up to 6 cards
+    if (player.hand) {
+      const needed = HAND_LIMIT - player.hand.length;
+      if (needed > 0) {
+        const drawn = this.deck.drawCards(needed);
+        player.hand.push(...drawn);
+        player.handCount = player.hand.length;
+      }
+    }
+
     this.advanceMarketTurn(playerId);
     return true;
   }
@@ -1058,8 +1069,8 @@ export class GameEngine {
     return true;
   }
 
-  // --- BOT AI PROACTIVE ENGINE ---
-  private scheduleBotAction(): void {
+  // --- BOT AI PROACTIVE ENGINE & AFK TAKEOVER ---
+  public scheduleBotAction(): void {
     if (this.botTimer) clearTimeout(this.botTimer);
 
     this.botTimer = setTimeout(() => {
@@ -1067,12 +1078,26 @@ export class GameEngine {
     }, 1200 + Math.random() * 800);
   }
 
+  public setPlayerAfk(playerId: string, isAfk: boolean): boolean {
+    const p = this.players.find((pl) => pl.id === playerId);
+    if (!p) return false;
+    p.isAfk = isAfk;
+    if (isAfk) {
+      this.addLog(`⚠️ ${p.name} อยู่ในสถานะ AFK — บอท AI เข้าเล่นแทนอัตโนมัติ`, 'alert');
+      this.scheduleBotAction();
+    } else {
+      this.addLog(`✅ ${p.name} กลับมาควบคุมเองแล้ว (ยกเลิกระบบบอทแทน)`, 'info');
+    }
+    this.notifyStateChanged();
+    return true;
+  }
+
   private executeBotLogic(): void {
     if (this.phase === 'MARKET') {
       if (this.activeMarketPlayerId) {
         const p = this.players.find((pl) => pl.id === this.activeMarketPlayerId);
-        if (p && p.isBot) {
-          // Bot market turn
+        if (p && (p.isBot || p.isAfk || !p.isConnected)) {
+          // Bot / AFK market turn
           const discardIds: string[] = [];
           if (p.hand) {
             // Discard 1-2 lowest value cards
@@ -1084,7 +1109,7 @@ export class GameEngine {
         }
       }
     } else if (this.phase === 'LOADING') {
-      const unreadyBot = this.getMerchants().find((m) => m.isBot && !m.hasPackedCrate);
+      const unreadyBot = this.getMerchants().find((m) => (m.isBot || m.isAfk || !m.isConnected) && !m.hasPackedCrate);
       if (unreadyBot && unreadyBot.hand && unreadyBot.hand.length > 0) {
         const count = Math.min(unreadyBot.hand.length, Math.floor(Math.random() * 3) + 2);
         const cardIds = unreadyBot.hand.slice(0, count).map((c) => c.id);
@@ -1093,7 +1118,7 @@ export class GameEngine {
         this.packCrate(unreadyBot.id, cardIds, bestType);
       }
     } else if (this.phase === 'DECLARATION') {
-      const undeclaredBot = this.getMerchants().find((m) => m.isBot && !m.hasDeclared && m.crate);
+      const undeclaredBot = this.getMerchants().find((m) => (m.isBot || m.isAfk || !m.isConnected) && !m.hasDeclared && m.crate);
       if (undeclaredBot && undeclaredBot.crate && undeclaredBot.crate.cards) {
         const legalCounts: Partial<Record<LegalGoodsType, number>> = {};
         for (const c of undeclaredBot.crate.cards) {
@@ -1108,8 +1133,8 @@ export class GameEngine {
       const inspector = this.getInspector();
       const target = this.players.find((p) => p.id === this.activeInspectTargetId);
 
-      // Bot as Merchant: offer realistic bribe if has contraband or slight bluff
-      if (target && target.isBot && target.crate?.cards) {
+      // Bot / AFK as Merchant: offer realistic bribe if has contraband or slight bluff
+      if (target && (target.isBot || target.isAfk || !target.isConnected) && target.crate?.cards) {
         const hasContraband = target.crate.cards.some((c) => c.category === 'contraband');
         const existingBribe = this.bribeOffers.find(
           (b) => b.fromPlayerId === target.id && b.targetPlayerId === target.id
@@ -1123,8 +1148,8 @@ export class GameEngine {
         }
       }
 
-      // Bot as Inspector: decides Inspect or Pass
-      if (inspector.isBot && target) {
+      // Bot / AFK as Inspector: decides Inspect or Pass
+      if ((inspector.isBot || inspector.isAfk || !inspector.isConnected) && target) {
         const relevantBribes = this.bribeOffers.filter((b) => b.targetPlayerId === target.id);
         const highestBribe = relevantBribes.sort((a, b) => b.cash - a.cash)[0];
 
@@ -1141,15 +1166,17 @@ export class GameEngine {
         }
       }
     } else if (this.phase === 'INSPECTION_REVEAL') {
-      // Auto advance after reveal if inspector is a bot
-      if (this.getInspector().isBot) {
+      // Auto advance after reveal if inspector is bot / afk
+      const inspector = this.getInspector();
+      if (inspector.isBot || inspector.isAfk || !inspector.isConnected) {
         setTimeout(() => {
           this.resumeNegotiationNextTarget();
         }, 2500);
       }
     } else if (this.phase === 'ROUND_END') {
-      // Advance to next round if inspector is a bot
-      if (this.getInspector().isBot) {
+      // Advance to next round if inspector is bot / afk
+      const inspector = this.getInspector();
+      if (inspector.isBot || inspector.isAfk || !inspector.isConnected) {
         setTimeout(() => {
           this.endRoundAndAdvance();
         }, 2000);
@@ -1197,6 +1224,7 @@ export class GameEngine {
         isInspector: p.isInspector,
         isReady: p.isReady,
         isConnected: p.isConnected,
+        isAfk: p.isAfk,
         isBot: p.isBot,
       };
     });
@@ -1258,7 +1286,7 @@ export class GameEngine {
                 : this.lastInspectionResult.actualCards,
           }
         : null,
-      logs: this.logs.slice(0, 30),
+      logs: this.logs.slice(-30),
       scores: this.phase === 'GAME_OVER' ? this.scores : undefined,
     };
   }

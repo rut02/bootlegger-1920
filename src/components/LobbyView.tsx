@@ -14,6 +14,7 @@ interface LobbyViewProps {
   onSetTheme: (themeId: ThemeId) => void;
   onAddBot: () => void;
   onStartGame: (rounds: number) => void;
+  onLeaveRoom?: () => void;
 }
 
 const AVATARS = ['🎩', '🕶️', '🚬', '💼', '⚔️', '🗡️', '🛡️', '🌾', '🥃', '👑'];
@@ -28,6 +29,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
   onSetTheme,
   onAddBot,
   onStartGame,
+  onLeaveRoom,
 }) => {
   const [playerName, setPlayerName] = useState<string>('Al Capone');
   const [selectedAvatar, setSelectedAvatar] = useState<string>('🎩');
@@ -227,6 +229,18 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
           <span>📜</span>
           <span>คู่มือกฎกติกา & วิธีคิดคะแนน (Rules & Scoring)</span>
         </button>
+
+        {/* Leave Room Button */}
+        {onLeaveRoom && (
+          <button
+            type="button"
+            onClick={onLeaveRoom}
+            className="w-full mt-2 py-2.5 rounded-xl border border-rose-800/60 bg-rose-950/50 hover:bg-rose-900/60 text-rose-300 font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm active:scale-95"
+          >
+            <span>🚪</span>
+            <span>ออกจากห้องนี้ (Leave Room)</span>
+          </button>
+        )}
 
         <RulesModal
           isOpen={showRulesModal}

@@ -13,6 +13,7 @@ interface HandDragZoneProps {
   onToggleSelect: (cardId: string) => void;
   onSelectMultiple: (cardIds: string[]) => void;
   onDropIntoCrate?: (cardIds: string[]) => void;
+  showDropBox?: boolean;
 }
 
 export const HandDragZone: React.FC<HandDragZoneProps> = ({
@@ -21,6 +22,7 @@ export const HandDragZone: React.FC<HandDragZoneProps> = ({
   isLocked,
   themeCrateTitle,
   isStealthMode = false,
+  showDropBox = false,
   onToggleSelect,
   onSelectMultiple,
   onDropIntoCrate,
@@ -194,8 +196,8 @@ export const HandDragZone: React.FC<HandDragZoneProps> = ({
     <div className="relative w-full flex flex-col items-center">
       {/* 1. DROP TARGETS ROW */}
 
-      {/* Case A: In Loading Phase -> Big Enlarged Crate Drop Box */}
-      {onDropIntoCrate && !isLocked && (
+      {/* Case A: In Loading Phase -> Big Enlarged Crate Drop Box (Shown only when showDropBox is explicitly enabled) */}
+      {showDropBox && onDropIntoCrate && !isLocked && (
         <div
           ref={crateDropRef}
           className={`
@@ -286,7 +288,7 @@ export const HandDragZone: React.FC<HandDragZoneProps> = ({
                 onPointerDown={(e) => handleCardPointerDown(card.id, e)}
                 onClick={() => handleCardClick(card.id)}
                 className={`
-                  w-32 h-44 sm:w-36 sm:h-48 rounded-xl border-2 border-amber-500/70 overflow-hidden relative
+                  w-24 h-32 sm:w-28 sm:h-38 md:w-32 md:h-44 rounded-xl border-2 border-amber-500/70 overflow-hidden relative
                   flex flex-col items-center justify-between cursor-pointer select-none shadow-md hover:scale-105 transition-all
                   ${isSelected ? 'ring-4 ring-vintage-gold -translate-y-2' : ''}
                 `}

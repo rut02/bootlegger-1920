@@ -60,6 +60,7 @@ export interface Player {
   isReady: boolean;
   isConnected: boolean;
   isBot?: boolean;
+  isAfk?: boolean; // When human player disconnects or is idle, Bot AI plays on their behalf
 }
 
 export type GamePhase =

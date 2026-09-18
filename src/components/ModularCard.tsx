@@ -6,7 +6,7 @@ interface ModularCardProps {
   card: Card;
   isSelected?: boolean;
   onClick?: () => void;
-  size?: 'sm' | 'md' | 'lg';
+  size?: 'xs' | 'sm' | 'md' | 'lg' | 'fill';
   isFaceDown?: boolean;
   disabled?: boolean;
   showBonusBadge?: boolean;
@@ -34,9 +34,11 @@ export const ModularCard: React.FC<ModularCardProps> = ({
 
   // Size dimensions (Strict Aspect Ratio 3:4)
   const sizeClasses = {
-    sm: 'w-24 aspect-[3/4] text-[8px]',
-    md: 'w-36 sm:w-40 aspect-[3/4] text-[10px]',
+    xs: 'w-16 sm:w-18 aspect-[3/4] text-[7px]',
+    sm: 'w-20 sm:w-24 aspect-[3/4] text-[8px]',
+    md: 'w-24 sm:w-28 md:w-32 aspect-[3/4] text-[9px]',
     lg: 'w-56 sm:w-60 aspect-[3/4] text-xs',
+    fill: 'w-full h-full max-w-full max-h-full aspect-[3/4] text-[8px]',
   }[size];
 
   // If card is face-down (e.g. in secret crate or other player's hand)

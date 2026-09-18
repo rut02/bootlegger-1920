@@ -297,4 +297,45 @@ describe('Universal Bribes & Market 3-Step Flow Tests', () => {
     const coffeeTotal = merchant.warehouse.legal.coffee.length * THEMES.mafia_1920.legalGoods.coffee.value;
     expect(coffeeTotal).toBe(3 * THEMES.mafia_1920.legalGoods.coffee.value);
   });
+
+  it('handles Step 3 finalization with 4 cards (3 to left, 1 to right)', () => {
+    game.startGame(1);
+    const activeMerchantId = game.activeMarketPlayerId!;
+    const player = game.players.find((p) => p.id === activeMerchantId)!;
+    expect(player.hand?.length).toBe(6);
+
+    // Step 1: Set aside 4 cards
+    const cardsToDiscard = player.hand!.slice(0, 4).map((c) => c.id);
+    expect(game.marketSetAsideDiscards(activeMerchantId, cardsToDiscard)).toBe(true);
+    expect(player.hand?.length).toBe(2);
+    expect(player.pendingDiscards?.length).toBe(4);
+
+    // Step 2: Draw 4 cards back to reach 6
+    for (let i = 0; i < 4; i++) {
+      expect(game.marketDrawSingle(activeMerchantId, 'deck')).not.toBeNull();
+    }
+    expect(player.hand?.length).toBe(6);
+
+    // Step 3: Finalize 3 cards to left, 1 card to right
+    const pendingIds = player.pendingDiscards!.map((c) => c.id);
+    const leftIds = pendingIds.slice(0, 3);
+    const rightIds = pendingIds.slice(3);
+
+    const initialLeftCount = game.deck.getDiscardPiles().leftCount;
+    const initialRightCount = game.deck.getDiscardPiles().rightCount;
+
+    const finalizeSuccess = game.marketFinalizeDiscards(activeMerchantId, leftIds, rightIds);
+    expect(finalizeSuccess).toBe(true);
+    expect(player.pendingDiscards?.length).toBe(0);
+    expect(player.hand?.length).toBe(6);
+
+    // Piles should have increased by 3 and 1
+    const finalPiles = game.deck.getDiscardPiles();
+    expect(finalPiles.leftCount).toBe(initialLeftCount + 3);
+    expect(finalPiles.rightCount).toBe(initialRightCount + 1);
+
+    // Turn should have advanced to next player
+    expect(game.activeMarketPlayerId).not.toBe(activeMerchantId);
+  });
 });
+
