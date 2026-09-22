@@ -49,32 +49,14 @@ export const RulesModal: React.FC<RulesModalProps> = ({
           </button>
         </div>
 
-        {/* Theme Switcher within Guide */}
+        {/* Theme Indicator within Guide */}
         <div className="flex items-center justify-between bg-black/40 px-3 py-2 rounded-xl mt-3 border border-white/10 text-xs">
-          <span className="text-vintage-paper/80 font-bold">ดูข้อมูลสินค้าตามธีม:</span>
+          <span className="text-vintage-paper/80 font-bold">ข้อมูลสินค้าและกติกา:</span>
           <div className="flex gap-1.5">
-            <button
-              type="button"
-              onClick={() => setPreviewThemeId('mafia_1920')}
-              className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
-                previewThemeId === 'mafia_1920'
-                  ? 'bg-amber-950 border border-vintage-gold text-vintage-gold shadow'
-                  : 'bg-black/30 text-white/50 hover:text-white'
-              }`}
-            >
-              🥃 มาเฟีย 1920s
-            </button>
-            <button
-              type="button"
-              onClick={() => setPreviewThemeId('bang_rajan')}
-              className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
-                previewThemeId === 'bang_rajan'
-                  ? 'bg-amber-950 border border-vintage-gold text-vintage-gold shadow'
-                  : 'bg-black/30 text-white/50 hover:text-white'
-              }`}
-            >
-              ⚔️ บางระจัน 2309
-            </button>
+            <div className="px-2.5 py-1 rounded-lg font-bold bg-amber-950 border border-vintage-gold text-vintage-gold shadow flex items-center gap-1.5">
+              <span>🥃</span>
+              <span>มาเฟีย 1920s (Prohibition)</span>
+            </div>
           </div>
         </div>
 

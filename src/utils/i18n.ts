@@ -1,4 +1,4 @@
-﻿export type Language = 'th' | 'en';
+export type Language = 'th' | 'en';
 
 export const TRANSLATIONS = {
   th: {
@@ -50,6 +50,7 @@ export const TRANSLATIONS = {
     roundsPerPlayer: 'จำนวนรอบที่เป็นสารวัตรต่อคน',
     fastGame: 'คนละ 1 รอบ (เกมเร็ว)',
     standardGame: 'คนละ 2 รอบ (มาตรฐาน)',
+    extendedGame: 'คนละ 3 รอบ (เต็มอิ่ม / 2–3 คน)',
     startGame: 'เริ่มเกมเดี๋ยวนี้!',
     needAtLeast2: 'ต้องการผู้เล่นอย่างน้อย 2 คน',
     waitingForHost: 'กำลังรอหัวหน้าห้องกดเริ่มเกม...',
@@ -166,6 +167,7 @@ export const TRANSLATIONS = {
     roundsPerPlayer: 'Inspector Rounds Per Player',
     fastGame: '1 Round Each (Fast Game)',
     standardGame: '2 Rounds Each (Standard)',
+    extendedGame: '3 Rounds Each (Extended / 2–3 Players)',
     startGame: 'START GAME NOW!',
     needAtLeast2: 'At least 2 players required',
     waitingForHost: 'Waiting for room host to start the game...',

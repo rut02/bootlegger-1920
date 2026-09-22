@@ -17,7 +17,7 @@ interface LobbyViewProps {
   onLeaveRoom?: () => void;
 }
 
-const AVATARS = ['🎩', '🕶️', '🚬', '💼', '⚔️', '🗡️', '🛡️', '🌾', '🥃', '👑'];
+const AVATARS = ['🎩', '🕶️', '🚬', '💼', '🔫', '🎲', '💰', '🥃', '🚘', '👑'];
 
 export const LobbyView: React.FC<LobbyViewProps> = ({
   roomCode,
@@ -58,7 +58,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
     return (
       <div className="max-w-md mx-auto vintage-box rounded-2xl p-6 sm:p-8 border-2 border-vintage-gold/50 shadow-2xl">
         <div className="text-center mb-5">
-          <span className="text-4xl mb-1 block">{themeId === 'bang_rajan' ? '⚔️' : '🥃'}</span>
+          <span className="text-4xl mb-1 block">🥃</span>
           <h1 className="text-2xl font-bold font-vintage gold-gradient-text">
             ห้องเตรียมความพร้อม
           </h1>
@@ -171,29 +171,46 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
             <label className="text-xs font-bold text-vintage-paper/80 block mb-2">
               จำนวนรอบที่เป็นสารวัตร/ผู้คุมด่านต่อคน:
             </label>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
               <button
                 type="button"
                 onClick={() => setRoundsPerPlayer(1)}
-                className={`py-2 rounded-lg text-xs font-bold border transition-all ${
+                className={`py-2 px-1 rounded-lg text-xs font-bold border transition-all text-center ${
                   roundsPerPlayer === 1
                     ? 'bg-vintage-gold text-vintage-dark border-vintage-gold shadow-md'
-                    : 'bg-black/40 border-white/10 text-vintage-paper/70'
+                    : 'bg-black/40 border-white/10 text-vintage-paper/70 hover:border-vintage-gold/40'
                 }`}
               >
-                คนละ 1 รอบ (เกมเร็ว)
+                <div>คนละ 1 รอบ</div>
+                <div className="text-[10px] font-normal opacity-80 mt-0.5">เกมด่วน</div>
               </button>
               <button
                 type="button"
                 onClick={() => setRoundsPerPlayer(2)}
-                className={`py-2 rounded-lg text-xs font-bold border transition-all ${
+                className={`py-2 px-1 rounded-lg text-xs font-bold border transition-all text-center ${
                   roundsPerPlayer === 2
                     ? 'bg-vintage-gold text-vintage-dark border-vintage-gold shadow-md'
-                    : 'bg-black/40 border-white/10 text-vintage-paper/70'
+                    : 'bg-black/40 border-white/10 text-vintage-paper/70 hover:border-vintage-gold/40'
                 }`}
               >
-                คนละ 2 รอบ (มาตรฐาน)
+                <div>คนละ 2 รอบ</div>
+                <div className="text-[10px] font-normal opacity-80 mt-0.5">มาตรฐาน (4–6 คน)</div>
               </button>
+              <button
+                type="button"
+                onClick={() => setRoundsPerPlayer(3)}
+                className={`py-2 px-1 rounded-lg text-xs font-bold border transition-all text-center ${
+                  roundsPerPlayer === 3
+                    ? 'bg-vintage-gold text-vintage-dark border-vintage-gold shadow-md'
+                    : 'bg-black/40 border-white/10 text-vintage-paper/70 hover:border-vintage-gold/40'
+                }`}
+              >
+                <div>คนละ 3 รอบ</div>
+                <div className="text-[10px] font-normal opacity-80 mt-0.5">เต็มอิ่ม (2–3 คน)</div>
+              </button>
+            </div>
+            <div className="mt-2.5 text-[11px] text-vintage-paper/70 text-center bg-black/40 py-1.5 px-2 rounded-lg border border-white/5">
+              รวมทั้งเกม: <strong className="text-vintage-gold text-xs">{players.length * roundsPerPlayer} รอบ</strong> (ผู้เล่น {players.length} คน × คนละ {roundsPerPlayer} รอบ)
             </div>
           </div>
         )}
@@ -255,7 +272,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
   return (
     <div className="max-w-md mx-auto vintage-box rounded-2xl p-6 sm:p-8 border-2 border-vintage-gold/50 shadow-2xl">
       <div className="text-center mb-6">
-        <span className="text-5xl mb-2 block">{selectedTheme === 'bang_rajan' ? '⚔️' : '🥃'}</span>
+        <span className="text-5xl mb-2 block">🥃</span>
         <h1 className="text-3xl font-bold font-vintage gold-gradient-text tracking-wide">
           {currentThemeInfo.name}
         </h1>
@@ -264,46 +281,18 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
         </p>
       </div>
 
-      {/* Choose Theme */}
-      <div className="mb-5">
-        <label className="text-xs font-bold text-vintage-paper/80 block mb-1.5">
-          เลือกธีมยุคของเกม (Theme Selection):
-        </label>
-        <div className="grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            onClick={() => {
-              setSelectedTheme('mafia_1920');
-              setPlayerName('Al Capone');
-              setSelectedAvatar('🎩');
-            }}
-            className={`p-3 rounded-xl border text-left transition-all ${
-              selectedTheme === 'mafia_1920'
-                ? 'bg-amber-950/80 border-vintage-gold shadow-md'
-                : 'bg-black/40 border-white/10 opacity-60 hover:opacity-100'
-            }`}
-          >
-            <span className="text-xl block mb-1">🥃</span>
-            <div className="font-bold text-xs text-vintage-gold">มาเฟีย 1920s</div>
-            <div className="text-[10px] text-vintage-paper/60 mt-0.5">ชิคาโก สุราเถื่อน ปืนกล</div>
-          </button>
-
-          <button
-            type="button"
-            disabled
-            className="p-3 rounded-xl border text-left transition-all bg-black/20 border-white/5 opacity-40 cursor-not-allowed relative overflow-hidden"
-            title="โหมดบางระจันยังอยู่ในระหว่างการพัฒนา"
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-xl block mb-1">⚔️</span>
-              <span className="text-[9px] bg-amber-950/80 text-amber-400/80 border border-amber-500/30 px-1.5 py-0.5 rounded font-mono">
-                เร็วๆ นี้
-              </span>
-            </div>
-            <div className="font-bold text-xs text-vintage-gold/60">บางระจัน 2309</div>
-            <div className="text-[10px] text-vintage-paper/40 mt-0.5">กำลังพัฒนา ยังไม่เปิดให้เลือก</div>
-          </button>
+      {/* Active Game Theme Card */}
+      <div className="mb-5 p-3 rounded-xl border border-vintage-gold/40 bg-gradient-to-r from-amber-950/60 to-black/50 flex items-center justify-between shadow-md">
+        <div className="flex items-center gap-3">
+          <span className="text-2xl">🥃</span>
+          <div>
+            <div className="font-bold text-xs text-vintage-gold">ธีม: มาเฟีย 1920s (Prohibition Era)</div>
+            <div className="text-[10px] text-vintage-paper/60">ชิคาโก ยุคห้ามสุรา สุราเถื่อน ปืนกลทอมมี่ และการติดสินบน</div>
+          </div>
         </div>
+        <span className="text-[9px] bg-amber-900/60 text-amber-300 border border-amber-600/40 px-2 py-0.5 rounded-full font-bold">
+          ชิคาโก 1920s
+        </span>
       </div>
 
       {/* Profile Setup */}
